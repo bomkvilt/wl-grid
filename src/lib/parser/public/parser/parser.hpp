@@ -50,7 +50,7 @@ public:
 		auto tmp = std::vector<std::string>();
 		for (auto& row : exported)
 		{
-			tmp.push_back(boost::join(row, ","));
+			tmp.push_back("{" + boost::join(row, ",") + "}");
 		}
 		ss << boost::join(tmp, ",");
 		ss << "}";

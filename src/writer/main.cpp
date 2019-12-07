@@ -30,7 +30,7 @@ int main(int argc, char** argv)
 
 	try
 	{
-		auto base = SQLite::Database("./data/" + baseName, SQLite::OPEN_CREATE|SQLite::OPEN_READWRITE);
+		auto base = SQLite::Database(baseName, SQLite::OPEN_CREATE|SQLite::OPEN_READWRITE);
 		base.exec("SELECT 5");
 		auto _ = Parser::Parser(base)
 			.LoadRequiredPoints(points)

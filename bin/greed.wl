@@ -1,5 +1,7 @@
 (* ::Package:: *)
 
+greedDataRoot = "./data/";
+
 greed[db_, f_, zones_List, OptionsPattern[{
 	bParallel   -> False,
 	vBucketSize -> 10
@@ -13,18 +15,11 @@ greed[db_, f_, zones_List, OptionsPattern[{
 	bActive  := vState == 0;
 	bPaused  := vState > 0;
 	bStopped := vState > 1;
-	If [OptionValue[bParallel],
-		SetSharedVariable[vState];
-		LaunchKernels[] // Quiet;
-	];
 	{
 		{
 			Button["Pause", vState = 1],
 			Button["Stop" , vState = 2]
 		} // Row
-		, (
-			(ToString[#[[1]]] <> " -> " <> ToString[OptionValue[#[[2]]]])& /@ Options[greed]
-		) // Column
 		, Dynamic[
 			StringForm["points: ``  processed: `` (``%)"
 				, Length[req]
@@ -43,14 +38,19 @@ greed[db_, f_, zones_List, OptionsPattern[{
 		Return[res];
 	];
 	
-	map[points_] := If [OptionValue[bParallel]
-	,   Return[ParallelMap[task, points]]
+	map[points_] := If [!OptionValue[bParallel]
 	,   Return[Map[task, points]]
+	,   
+		groups  = Partition[points, UpTo[Ceiling[Length[points] / $KernelCount]]];
+		results = ParallelMap[Function[{subpoints},
+			task /@ subpoints
+		], groups];
+		Return[Flatten[results, 1]];
 	];
 	
 	worker[] := Block[{subpoints = #},
 		If [bStopped, Return[]];
-				
+		
 		points = map[subpoints];
 		fnd = Join[fnd, points];
 		greedSavePoints[db, points];
@@ -59,6 +59,10 @@ greed[db_, f_, zones_List, OptionsPattern[{
 		OptionValue[vBucketSize] 1
 	]]];
 	
+	If [OptionValue[bParallel],
+		SetSharedVariable[vState];
+		LaunchKernels[] // Quiet;
+	];
 	worker // greedTimeing["process data"];
 	
 	Return[fnd];
@@ -124,7 +128,7 @@ greedWriteToFile[data_] := (
 
 greedRun[db_, app_, points_] := (
 	file = greedWriteToFile[points];
-	res  = RunProcess[{NotebookDirectory[] <> app, db, file}
+	res  = RunProcess[{NotebookDirectory[] <> app, greedDataRoot <> db, file}
 		, ProcessDirectory->NotebookDirectory[]
 	];	
 	If[res[["ExitCode"]] != 0,
