@@ -1,13 +1,13 @@
 (* ::Package:: *)
 
-greedDataRoot = "./data/";
+gridDataRoot = "./data/";
 
-greed[db_, f_, zones_List, OptionsPattern[{
+grid[db_, f_, zones_List, OptionsPattern[{
 	bParallel   -> False,
 	vBucketSize -> 10
 }]] := Block[{},
-	req = greedCalcPoints[zones]  & // greedTimeing["generate points"];
-	out = greedLoadPoints[db, req]& // greedTimeing["load points"];
+	req = gridCalcPoints[zones]  & // gridTimeing["generate points"];
+	out = gridLoadPoints[db, req]& // gridTimeing["load points"];
 	fnd = out[["found"  ]];
 	msg = out[["missing"]];
 	
@@ -53,7 +53,7 @@ greed[db_, f_, zones_List, OptionsPattern[{
 		
 		points = map[subpoints];
 		fnd = Join[fnd, points];
-		greedSavePoints[db, points];
+		gridSavePoints[db, points];
 	]& /@ Partition[msg, UpTo[Max[
 		OptionValue[vBucketSize] If [OptionValue[bParallel], $KernelCount, 1],
 		OptionValue[vBucketSize] 1
@@ -63,7 +63,7 @@ greed[db_, f_, zones_List, OptionsPattern[{
 		SetSharedVariable[vState];
 		LaunchKernels[] // Quiet;
 	];
-	worker // greedTimeing["process data"];
+	worker // gridTimeing["process data"];
 	
 	Return[fnd];
 ];
@@ -72,7 +72,7 @@ greed[db_, f_, zones_List, OptionsPattern[{
 (** Internal *)
 
 
-greedTimeing[name_] := Block[{},
+gridTimeing[name_] := Block[{},
 	entery[clb_] := (
 		{time, res} = AbsoluteTiming[clb[]];
 		Print[StringForm["``: ``s", name, ToString[time]]];
@@ -82,17 +82,17 @@ greedTimeing[name_] := Block[{},
 ];
 
 
-greedCalcPoints[zones_] := Block[{},
+gridCalcPoints[zones_] := Block[{},
 	points = {};
 	(
-		zonePoints = greedCalcZonePoints[#];
+		zonePoints = gridCalcZonePoints[#];
 		points = Join[points, zonePoints];
 	) & /@ zones;
 	points = DeleteDuplicates[points];
 	Return[points];
 ];
 
-greedCalcZonePoints[zone_] := Block[{},
+gridCalcZonePoints[zone_] := Block[{},
 	points = {#}& /@ zone[[1]];
 	For[i = 2, i <= Length[zone], i++,
 		row = zone[[i]];
@@ -103,8 +103,8 @@ greedCalcZonePoints[zone_] := Block[{},
 ];
 
 
-greedLoadPoints[db_, req_] := Block[{},
-	out = greedRun[db, "reader.exe", req];	
+gridLoadPoints[db_, req_] := Block[{},
+	out = gridRun[db, "reader.exe", req];	
 	found   = "found"   /. out;
 	missing = "missing" /. out;
 	Return[<| 
@@ -113,12 +113,12 @@ greedLoadPoints[db_, req_] := Block[{},
 	|>]
 ]
 
-greedSavePoints[db_, fnd_] := Block[{},
-	greedRun[db, "writer.exe", fnd];
+gridSavePoints[db_, fnd_] := Block[{},
+	gridRun[db, "writer.exe", fnd];
 ];
 
 (* -------------------------------------------------------- *)
-greedWriteToFile[data_] := (
+gridWriteToFile[data_] := (
 	toString[s_] := "'" <> ToString[s] <> "'";
 	text = ((toString[#]& /@ #& /@ data)// ToString);
 	file = CreateFile[];
@@ -126,9 +126,9 @@ greedWriteToFile[data_] := (
 	Return[file];
 );
 
-greedRun[db_, app_, points_] := (
-	file = greedWriteToFile[points];
-	res  = RunProcess[{NotebookDirectory[] <> app, greedDataRoot <> db, file}
+gridRun[db_, app_, points_] := (
+	file = gridWriteToFile[points];
+	res  = RunProcess[{NotebookDirectory[] <> app, gridDataRoot <> db, file}
 		, ProcessDirectory->NotebookDirectory[]
 	];	
 	If[res[["ExitCode"]] != 0,
