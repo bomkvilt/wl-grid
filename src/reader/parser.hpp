@@ -1,0 +1,70 @@
+#ifndef READER_PARSER_HPP
+#define READER_PARSER_HPP
+
+#include <map>
+#include <string_view>
+
+#include <boost/algorithm/string.hpp>
+
+#include "SQLiteCpp/SQLiteCpp.h"
+#include "reflect/reflect.hpp"
+#include "parser/parser.hpp"
+
+
+
+class Parser : public ParserBase
+{
+public:
+	Parser(SQLite::Database& db)
+		: base(db)
+	{}
+
+	Parser& LoadRequiredPoints(const std::string& data)
+	{
+		ImportPoints(data, rpoints);
+		return *this;
+	}
+
+	Parser& FindPoints()
+	{
+		auto query = SQLite::Statement(base, "SELECT * FROM points WHERE coordinates == ?");
+		for (auto point : rpoints)
+		{
+			query.bind(1, boost::join(point, "___"));
+			if (query.executeStep())
+			{
+				std::string payload = query.getColumn(2);
+				point.push_back(payload);
+				lpoints.emplace_back(std::move(point));
+			}
+			else
+			{
+				mpoints.emplace_back(std::move(point));
+			}
+			query.reset();
+		}
+		return *this;
+	}
+
+	std::string GetResults()
+	{
+		auto missing = ExportPoints(mpoints);
+		auto found   = ExportPoints(lpoints);
+		return "{\"missing\" -> " + missing + ", \"found\" -> " + found + "}";
+	}
+
+	static std::string GetEmptyResult(const std::string& points)
+	{
+		return "{\"missing\" -> " + points + ", \"found\" -> {}}";
+	}
+
+private:
+	SQLite::Database& base;
+
+	ATable rpoints; // required points
+	ATable mpoints; // missings points
+	ATable lpoints; // loaded points
+};
+
+
+#endif //!READER_PARSER_HPP
