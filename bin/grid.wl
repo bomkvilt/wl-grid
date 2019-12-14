@@ -1,144 +1,136 @@
 (* ::Package:: *)
 
-gridDataRoot = "./data/";
+gridDataRoot = "data/";
+gridPackRoot = NotebookDirectory[];
 
 grid[db_, f_, zones_List, OptionsPattern[{
 	bParallel   -> False,
 	vBucketSize -> 10
-}]] := Block[{},
-	req = gridCalcPoints[zones]  & // gridTimeing["generate points"];
-	out = gridLoadPoints[db, req]& // gridTimeing["load points"];
-	fnd = out[["found"  ]];
-	msg = out[["missing"]];
+}]] := Module[{},	
+	grid`req = gridCalcPoints[zones       ]& // gridTimeing["generate points"];
+	grid`out = gridLoadPoints[db, grid`req]& // gridTimeing["load points"];
+	grid`fnd = grid`out[["found"  ]];
+	grid`msg = grid`out[["missing"]];
 	
-	vState = 0;
-	bActive  := vState == 0;
-	bPaused  := vState > 0;
-	bStopped := vState > 1;
-	{
+	grid`vState = 0;
+	grid`bActive  := grid`vState == 0;
+	grid`bPaused  := grid`vState > 0;
+	grid`bStopped := grid`vState > 1;
+	If [OptionValue[bParallel],
+		SetSharedVariable[grid`vState];
+		LaunchKernels[] // Quiet;
+	];
+	
+	{ (* Print interface *)
 		{
-			Button["Pause", vState = 1],
-			Button["Stop" , vState = 2]
+			Button["Pause", grid`vState = 1],
+			Button["Stop" , grid`vState = 2]
 		} // Row
 		, Dynamic[
 			StringForm["points: ``  processed: `` (``%)"
-				, Length[req]
-				, Length[fnd]
-				, 100 N[Length[fnd]/Length[req]]
+				, Length[grid`req]
+				, Length[grid`fnd]
+				, 100 N[Length[grid`fnd]/Length[grid`req]]
 			]
 		]
 	} // Column // Panel // Print;
 	
-	task[point_] := Block[{},
-		If   [bStopped, Return[]];
-		While[!bActive, Pause[1]];
-		
-		res = f[point];
-		res = Append[point, res];
-		Return[res];
+	grid`map[clb_, points_] := If [OptionValue[bParallel]
+	,   Return[ParallelMap[clb, points]]
+	,   Return[Map[clb, points]]
 	];
 	
-	map[points_] := If [!OptionValue[bParallel]
-	,   Return[Map[task, points]]
-	,   
-		groups  = Partition[points, UpTo[Ceiling[Length[points] / $KernelCount]]];
-		results = ParallelMap[Function[{subpoints},
-			task /@ subpoints
-		], groups];
-		Return[Flatten[results, 1]];
-	];
-	
-	worker[] := Block[{subpoints = #},
-		If [bStopped, Return[]];
+	grid`worker[] := Module[{subpoints = #},
+		If [grid`bStopped, Return[]];
 		
-		points = map[subpoints];
-		fnd = Join[fnd, points];
-		gridSavePoints[db, points];
-	]& /@ Partition[msg, UpTo[Max[
+		grid`points = grid`map[(
+			If   [ grid`bStopped, Return[]];
+			While[!grid`bActive , Pause[1]];
+			Append[#, f[#]]
+		)&, subpoints];
+		grid`fnd = Join[grid`fnd, grid`points];
+		gridSavePoints[db, grid`points];
+	]& /@ Partition[grid`msg, UpTo[Max[
 		OptionValue[vBucketSize] If [OptionValue[bParallel], $KernelCount, 1],
 		OptionValue[vBucketSize] 1
 	]]];
 	
-	If [OptionValue[bParallel],
-		SetSharedVariable[vState];
-		LaunchKernels[] // Quiet;
-	];
-	worker // gridTimeing["process data"];
+	grid`worker // gridTimeing["process data"];
 	
-	Return[fnd];
+	Return[grid`fnd];
 ];
 
 
 (** Internal *)
 
 
-gridTimeing[name_] := Block[{},
-	entery[clb_] := (
-		{time, res} = AbsoluteTiming[clb[]];
-		Print[StringForm["``: ``s", name, ToString[time]]];
-		Return[res];
+gridTimeing[name_] := Module[{},
+	grid`entery[clb_] := (
+		{grid`time, grid`res} = AbsoluteTiming[clb[]];
+		Print[StringForm["``: ``s", name, ToString[grid`time]]];
+		Return[grid`res];
 	);
-	Return[entery];
-];
+	Return[grid`entery];
+]
 
 
-gridCalcPoints[zones_] := Block[{},
-	points = {};
+gridCalcPoints[zones_] := Module[{}, 
+	grid`points = {};
 	(
-		zonePoints = gridCalcZonePoints[#];
-		points = Join[points, zonePoints];
+		grid`zonePoints = gridCalcZonePoints[#];
+		grid`points = Join[grid`points, grid`zonePoints];
 	) & /@ zones;
-	points = DeleteDuplicates[points];
-	Return[points];
-];
+	grid`points = DeleteDuplicates[grid`points];
+	Return[grid`points];
+]
 
-gridCalcZonePoints[zone_] := Block[{},
-	points = {#}& /@ zone[[1]];
-	For[i = 2, i <= Length[zone], i++,
-		row = zone[[i]];
-		points = Table[Append[p, r], {p, points}, {r, row}];
-		points = Flatten[points, 1];
+gridCalcZonePoints[zone_] := Module[{}, 
+	grid`points = {#}& /@ zone[[1]];
+	For[grid`i = 2, grid`i <= Length[zone], grid`i++,
+		grid`row = zone[[grid`i]];
+		grid`points = Table[Append[p, r], {p, grid`points}, {r, grid`row}];
+		grid`points = Flatten[grid`points, 1];
 	];
-	Return[points];
-];
+	Return[grid`points];
+]
 
 
-gridLoadPoints[db_, req_] := Block[{},
-	out = gridRun[db, "reader.exe", req];	
-	found   = "found"   /. out;
-	missing = "missing" /. out;
+gridLoadPoints[db_, req_] := Module[{}, 
+	grid`out = gridRun[db, "reader.exe", req];	
+	grid`found   = "found"   /. grid`out;
+	grid`missing = "missing" /. grid`out;
 	Return[<| 
-		"found"   -> found, 
-		"missing" -> missing
+		"found"   -> grid`found, 
+		"missing" -> grid`missing
 	|>]
 ]
 
-gridSavePoints[db_, fnd_] := Block[{},
+gridSavePoints[db_, fnd_] := Module[{},
 	gridRun[db, "writer.exe", fnd];
-];
+]
 
 (* -------------------------------------------------------- *)
-gridWriteToFile[data_] := (
-	toString[s_] := "'" <> ToString[s] <> "'";
-	text = ((toString[#]& /@ #& /@ data)// ToString);
-	file = CreateFile[];
-	WriteString[file, text];	
-	Return[file];
-);
+gridWriteToFile[data_] := Module[{}, 
+	grid`toString[s_] := "'" <> ToString[s] <> "'";
+	grid`text = ((grid`toString[#]& /@ #& /@ data)// ToString);
+	grid`file = CreateFile[];
+	WriteString[grid`file, grid`text];	
+	Return[grid`file];
+]
 
-gridRun[db_, app_, points_] := (
-	file = gridWriteToFile[points];
-	res  = RunProcess[{NotebookDirectory[] <> app, gridDataRoot <> db, file}
-		, ProcessDirectory->NotebookDirectory[]
-	];	
-	If[res[["ExitCode"]] != 0,
-		Print[res];
+gridRun[db_, app_, points_] := Module[{}, 
+	grid`file = gridWriteToFile[points];
+	grid`res  = RunProcess[{gridPackRoot <> app, gridDataRoot <> db, grid`file}
+		, ProcessDirectory -> NotebookDirectory[]
+	];
+	If[grid`res[["ExitCode"]] != 0,
+		Print[grid`res];
 		Abort[];
 	];
 	
-	res = res[["StandardOutput"]];
-	res = StringDelete[res, "'"];
-	res = StringToStream[res];
-	res = Read[res];
-	Return[res];
-);
+	grid`res = grid`res[["StandardOutput"]];
+	grid`res = StringDelete[grid`res, "'"];
+	grid`res = StringToStream[grid`res];
+	grid`res = Read[grid`res];
+	Return[grid`res];
+]
