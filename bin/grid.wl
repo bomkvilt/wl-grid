@@ -3,7 +3,22 @@
 gridDataRoot = "data/";
 gridPackRoot = NotebookDirectory[];
 
-grid[db_, f_, zones_List, OptionsPattern[{
+grid[db_String, zones_] := Module[{},
+	grid`out = gridLoadPoints[db, grid`req]& // gridTimeing["load points"];
+	grid`fnd = grid`out[["found"  ]];
+	grid`msg = grid`out[["missing"]];
+	{
+		StringForm["points: ``  found: ``  missing: ``"
+			, Length[grid`fnd + grid`msg]
+			, Length[grid`fnd]
+			, Length[grid`msg]
+		]
+	} // Column // Panel // Print;
+	
+	Return[grid`fnd];
+]
+
+grid[db_String, f_, zones_List, OptionsPattern[{
 	bParallel   -> False,
 	vBucketSize -> 10
 }]] := Module[{},	
@@ -75,11 +90,8 @@ gridTimeing[name_] := Module[{},
 
 
 gridCalcPoints[zones_] := Module[{}, 
-	grid`points = {};
-	(
-		grid`zonePoints = gridCalcZonePoints[#];
-		grid`points = Join[grid`points, grid`zonePoints];
-	) & /@ zones;
+	grid`points = gridCalcZonePoints[#]& /@ zones;
+	grid`points = Flatten[grid`points, 1];
 	grid`points = DeleteDuplicates[grid`points];
 	Return[grid`points];
 ]
@@ -96,7 +108,7 @@ gridCalcZonePoints[zone_] := Module[{},
 
 
 gridLoadPoints[db_, req_] := Module[{}, 
-	grid`out = gridRun[db, "reader.exe", req];	
+	grid`out = gridRun[db, "reader.exe", req];
 	grid`found   = "found"   /. grid`out;
 	grid`missing = "missing" /. grid`out;
 	Return[<| 
@@ -111,16 +123,19 @@ gridSavePoints[db_, fnd_] := Module[{},
 
 (* -------------------------------------------------------- *)
 gridWriteToFile[data_] := Module[{}, 
-	grid`toString[s_] := "'" <> ToString[s] <> "'";
-	grid`text = ((grid`toString[#]& /@ #& /@ data)// ToString);
+	grid`text = (("'" <> gridForm[#] <> "'")& /@ #& /@ data);
 	grid`file = CreateFile[];
-	WriteString[grid`file, grid`text];	
+	WriteString[grid`file, grid`text];
 	Return[grid`file];
 ]
 
 gridRun[db_, app_, points_] := Module[{}, 
 	grid`file = gridWriteToFile[points];
-	grid`res  = RunProcess[{gridPackRoot <> app, gridDataRoot <> db, grid`file}
+	grid`res  = RunProcess[{
+		gridPackRoot <> app, 
+		gridDataRoot <> db, 
+		grid`file
+	}
 		, ProcessDirectory -> NotebookDirectory[]
 	];
 	If[grid`res[["ExitCode"]] != 0,
@@ -129,8 +144,14 @@ gridRun[db_, app_, points_] := Module[{},
 	];
 	
 	grid`res = grid`res[["StandardOutput"]];
-	grid`res = StringDelete[grid`res, "'"];
+	grid`res = StringDelete [grid`res, "'"];
+	grid`res = StringReplace[grid`res, "e" -> "*10^"];
 	grid`res = StringToStream[grid`res];
 	grid`res = Read[grid`res];
 	Return[grid`res];
 ]
+
+(* -------------------------------------------------------- *)
+gridForm[s_      ] := s // DecimalForm // N // ToString
+gridForm[s_String] := ("\"" <> s <> "\"")
+gridForm[s_List  ] := (gridForm[#]& /@ s) // ToString
