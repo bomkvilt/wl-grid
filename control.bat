@@ -1,6 +1,6 @@
 @echo off
 REM -------------------------------------------------------
-call :cmd_%1
+call :cmd_%1 %2 %3 %4 %5 %6 %7 %8 %9
 exit 0
 
 REM -------------------------------------------------------
@@ -12,4 +12,7 @@ REM -------------------------------------------------------
     exit /B 0
 :cmd_install
     call "scripts/install.bat"
+    exit /B 0
+:cmd_pack
+    call "scripts/pack.bat" %*
     exit /B 0

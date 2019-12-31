@@ -1,6 +1,12 @@
 @echo off
+set "srcRoot=.\\src-wl"
+set "packRoot=.\\build\\pack"
+set "buildRoot=.\\build\\windows\\bin\\Release"
 
+rd /s/q %packRoot%
+mkdir   %packRoot%
 for %%f IN (reader, writer) DO (
-    if exist "bin\%%f.exe" rm "bin\%%f.exe"
-    cp "build\windows\bin\Release\%%f.exe" "bin\%%f.exe"
+    cp   "%buildRoot%\\%%f.exe" "%packRoot%\\%%f.exe"
+    echo "%buildRoot%\\%%f.exe"
 )
+xcopy %srcRoot% %packRoot% /e
