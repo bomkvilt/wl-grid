@@ -1,15 +1,23 @@
 (* ::Package:: *)
 
+Package["ultima`"]
+PackageScope["grid"]
+
+PackageExport["grid"]
+PackageExport["gridDataRoot"]
+
+
 gridDataRoot = "data/";
-gridPackRoot = NotebookDirectory[];
+gridPackRoot = DirectoryName[ultima`pack`$fileName] <> "/";
 
 grid[db_String, zones_] := Module[{},
+	grid`req = gridCalcPoints[zones       ]& // gridTimeing["generate points"];
 	grid`out = gridLoadPoints[db, grid`req]& // gridTimeing["load points"];
 	grid`fnd = grid`out[["found"  ]];
 	grid`msg = grid`out[["missing"]];
 	{
 		StringForm["points: ``  found: ``  missing: ``"
-			, Length[grid`fnd + grid`msg]
+			, Length[grid`fnd] + Length[grid`msg]
 			, Length[grid`fnd]
 			, Length[grid`msg]
 		]

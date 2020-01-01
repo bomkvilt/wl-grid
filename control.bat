@@ -14,5 +14,6 @@ REM -------------------------------------------------------
     call "scripts/install.bat"
     exit /B 0
 :cmd_pack
+    call "scripts/install.bat"
     call "scripts/pack.bat" %*
     exit /B 0
