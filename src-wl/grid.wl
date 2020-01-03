@@ -10,9 +10,12 @@ PackageExport["gridDataRoot"]
 gridDataRoot = "data/";
 gridPackRoot = DirectoryName[ultima`pack`$fileName] <> "/";
 
-grid[db_String, zones_] := Module[{},
-	grid`req = gridCalcPoints[zones       ]& // gridTimeing["generate points"];
-	grid`out = gridLoadPoints[db, grid`req]& // gridTimeing["load points"];
+
+grid[db_String, zones_, OptionsPattern[{
+	vMode -> "Grid"
+}]] := Module[{vmode = OptionValue[vMode]},
+	grid`req = gridCalcPoints[zones       , vmode]& // gridTimeing["generate points"];
+	grid`out = gridLoadPoints[db, grid`req, vmode]& // gridTimeing["load points"];
 	grid`fnd = grid`out[["found"  ]];
 	grid`msg = grid`out[["missing"]];
 	{
@@ -27,56 +30,52 @@ grid[db_String, zones_] := Module[{},
 ]
 
 grid[db_String, f_, zones_List, OptionsPattern[{
-	bParallel   -> False,
-	vBucketSize -> 10
-}]] := Module[{},	
-	grid`req = gridCalcPoints[zones       ]& // gridTimeing["generate points"];
-	grid`out = gridLoadPoints[db, grid`req]& // gridTimeing["load points"];
+	bParallel   -> True,
+	vBucketSize -> 10,
+	vMode       -> "Grid"
+}]] := Module[{
+	vmode    = OptionValue[vMode],
+	vbacket  = OptionValue[vBucketSize]
+},
+	grid`req = gridCalcPoints[zones       , vmode]& // gridTimeing["generate points"];
+	grid`out = gridLoadPoints[db, grid`req, vmode]& // gridTimeing["load points"];
 	grid`fnd = grid`out[["found"  ]];
 	grid`msg = grid`out[["missing"]];
+	{
+		Dynamic[StringForm["points: ``  processed: `` (``%)"
+			, Length[grid`req]
+			, Length[grid`fnd]
+			, Round[100 N[Length[grid`fnd]/Length[grid`req]], 0.01]
+		]]
+	} // Column // Panel // Print;
 	
-	grid`vState = 0;
-	grid`bActive  := grid`vState == 0;
-	grid`bPaused  := grid`vState > 0;
-	grid`bStopped := grid`vState > 1;
 	If [OptionValue[bParallel],
-		SetSharedVariable[grid`vState];
 		LaunchKernels[] // Quiet;
 	];
 	
-	{ (* Print interface *)
-		{
-			Button["Pause", grid`vState = 1],
-			Button["Stop" , grid`vState = 2]
-		} // Row
-		, Dynamic[
-			StringForm["points: ``  processed: `` (``%)"
-				, Length[grid`req]
-				, Length[grid`fnd]
-				, 100 N[Length[grid`fnd]/Length[grid`req]]
-			]
-		]
-	} // Column // Panel // Print;
-	
 	grid`map[clb_, points_] := If [OptionValue[bParallel]
-	,   Return[ParallelMap[clb, points]]
-	,   Return[Map[clb, points]]
+	,   Return[ParallelMap[clb, points, Method->"EvaluationsPerKernel"->6]];
+	,   Return[Map[clb, points]];
 	];
 	
-	grid`worker[] := Module[{subpoints = #},
-		If [grid`bStopped, Return[]];
-		
-		grid`points = grid`map[(
-			If   [ grid`bStopped, Return[]];
-			While[!grid`bActive , Pause[1]];
+	grid`job = If [vmode == "Stage", 
+		(
+			grid`head = #[[1;;-2]];
+			grid`tail = #[[-1   ]];
+			Append[grid`head , f[grid`head, grid`tail]]
+		)&
+	, 
+		(
 			Append[#, f[#]]
-		)&, subpoints];
-		grid`fnd = Join[grid`fnd, grid`points];
+		)&
+	];
+	
+	grid`vkernels  = If [OptionValue[bParallel], $KernelCount, 1];
+	grid`worker[] := Module[{subpoints = #},
+		grid`points = grid`map[grid`job, subpoints];
+		grid`fnd    = Join[grid`fnd, grid`points];
 		gridSavePoints[db, grid`points];
-	]& /@ Partition[grid`msg, UpTo[Max[
-		OptionValue[vBucketSize] If [OptionValue[bParallel], $KernelCount, 1],
-		OptionValue[vBucketSize] 1
-	]]];
+	]& /@ Partition[grid`msg, UpTo[vbacket grid`vkernels]];
 	
 	grid`worker // gridTimeing["process data"];
 	
@@ -90,12 +89,20 @@ grid[db_String, f_, zones_List, OptionsPattern[{
 gridTimeing[name_] := Module[{},
 	grid`entery[clb_] := (
 		{grid`time, grid`res} = AbsoluteTiming[clb[]];
+		grid`time = grid`time // DecimalForm // N;
 		Print[StringForm["``: ``s", name, ToString[grid`time]]];
 		Return[grid`res];
 	);
 	Return[grid`entery];
 ]
 
+
+gridCalcPoints[zones_, vmode_] := Module[{}, 
+	If [vmode != "Grid",
+		Return[zones];
+	];
+	Return[gridCalcPoints[zones]];
+]
 
 gridCalcPoints[zones_] := Module[{}, 
 	grid`points = gridCalcZonePoints[#]& /@ zones;
@@ -114,6 +121,26 @@ gridCalcZonePoints[zone_] := Module[{},
 	Return[grid`points];
 ]
 
+
+gridLoadPoints[db_, req_, vmode_] := Module[{}, 
+	If [vmode == "Stage",
+		grid`dbtmp = db<>".tmp";
+		grid`heads = (#[[1;;-2]]&) /@ req;	
+		grid`out = gridLoadPoints[db, grid`heads];
+		grid`fnd = grid`out[["found"  ]];
+		grid`mis = grid`out[["missing"]];
+		
+		gridSavePoints[grid`dbtmp, req];
+		grid`tmp = gridLoadPoints[grid`dbtmp, grid`mis];
+		grid`mis = grid`tmp[["found"]];
+		gridDropBase[grid`dbtmp];
+		Return[<| 
+			"found"   -> grid`fnd,
+			"missing" -> grid`mis
+		|>];
+	];
+	Return[gridLoadPoints[db, req]];
+]
 
 gridLoadPoints[db_, req_] := Module[{}, 
 	grid`out = gridRun[db, "reader.exe", req];
@@ -158,6 +185,8 @@ gridRun[db_, app_, points_] := Module[{},
 	grid`res = Read[grid`res];
 	Return[grid`res];
 ]
+
+gridDropBase[db_] := DeleteFile[NotebookDirectory[] <> gridDataRoot <> db <> ".db3"]
 
 (* -------------------------------------------------------- *)
 gridForm[s_      ] := s // DecimalForm // N // ToString
