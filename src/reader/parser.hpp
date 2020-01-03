@@ -15,8 +15,10 @@
 class Parser : public ParserBase
 {
 public:
-	Parser(SQLite::Database& db)
-		: base(db)
+	Parser(SQLite::Database& db): base(&db)
+	{}
+
+	Parser(): base(nullptr)
 	{}
 
 	Parser& LoadRequiredPoints(const std::string& data)
@@ -27,7 +29,12 @@ public:
 
 	Parser& FindPoints()
 	{
-		auto query = SQLite::Statement(base, "SELECT * FROM points WHERE coordinates == ?");
+		if (!base)
+		{
+			return *this;
+		}
+
+		auto query = SQLite::Statement(*base, "SELECT * FROM points WHERE coordinates == ?");
 		for (auto point : rpoints)
 		{
 			query.bind(1, boost::join(point, "___"));
@@ -46,20 +53,22 @@ public:
 		return *this;
 	}
 
-	std::string GetResults()
+	auto GetResults() -> std::tuple<std::vector<std::string>, std::vector<std::string>>
 	{
-		auto missing = ExportPoints(mpoints);
-		auto found   = ExportPoints(lpoints);
-		return "{\"missing\" -> " + missing + ", \"found\" -> " + found + "}";
+		auto missing = ExportPointChunks(mpoints, 20000);
+		auto found   = ExportPointChunks(lpoints, 20000);
+		return { found, missing };
 	}
 
-	static std::string GetEmptyResult(const std::string& points)
+	auto GetEmptyResult() -> std::tuple<std::vector<std::string>, std::vector<std::string>>
 	{
-		return "{\"missing\" -> " + points + ", \"found\" -> {}}";
+		auto missing = ExportPointChunks(rpoints , 20000);
+		auto found   = ExportPointChunks(ATable(), 20000);
+		return { found, missing };
 	}
 
 private:
-	SQLite::Database& base;
+	SQLite::Database* base;
 
 	ATable rpoints; // required points
 	ATable mpoints; // missings points

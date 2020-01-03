@@ -142,13 +142,13 @@ gridLoadPoints[db_, req_, vmode_] := Module[{},
 	Return[gridLoadPoints[db, req]];
 ]
 
-gridLoadPoints[db_, req_] := Module[{}, 
-	grid`out = gridRun[db, "reader.exe", req];
-	grid`found   = "found"   /. grid`out;
-	grid`missing = "missing" /. grid`out;
+gridLoadPoints[db_, req_] := Module[{},
+	grid`res = gridRun[db, "reader.exe", req];
+	grid`res = StringToStream[grid`res];
+	grid`res = Read[grid`res];
 	Return[<| 
-		"found"   -> grid`found, 
-		"missing" -> grid`missing
+		"found"   -> gridReadFiles[grid`res[["found"  ]]], 
+		"missing" -> gridReadFiles[grid`res[["missing"]]]
 	|>]
 ]
 
@@ -170,20 +170,24 @@ gridRun[db_, app_, points_] := Module[{},
 		gridPackRoot <> app, 
 		gridDataRoot <> db, 
 		grid`file
-	}
-		, ProcessDirectory -> NotebookDirectory[]
-	];
+	}, ProcessDirectory -> NotebookDirectory[]];
 	If[grid`res[["ExitCode"]] != 0,
 		Print[grid`res];
 		Abort[];
 	];
-	
-	grid`res = grid`res[["StandardOutput"]];
-	grid`res = StringDelete [grid`res, "'"];
-	grid`res = StringReplace[grid`res, "e" -> "*10^"];
-	grid`res = StringToStream[grid`res];
-	grid`res = Read[grid`res];
-	Return[grid`res];
+	Return[grid`res[["StandardOutput"]]];
+]
+
+gridReadFiles[grid`files_] := Module[{},
+	grid`points = (
+		grid`file = NotebookDirectory[] <> #;
+		grid`data = Import[File[grid`file], "Text"];
+		grid`data = StringDelete[grid`data, "'"];
+		DeleteFile[grid`file];
+				
+		Read[StringToStream[grid`data]]
+	)& /@ grid`files;
+	Return[Flatten[grid`points, 1]];
 ]
 
 gridDropBase[db_] := DeleteFile[NotebookDirectory[] <> gridDataRoot <> db <> ".db3"]

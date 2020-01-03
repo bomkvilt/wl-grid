@@ -43,14 +43,40 @@ public:
 		}
 	}
 
-	std::string ExportPoints(const ATable& exported) const
+	auto ExportPointChunks(const ATable& points, size_t size) const -> std::vector<std::string>
+	{
+		auto pos = points.begin();
+		auto end = points.end();
+		auto dist = std::distance(pos, end);
+
+		auto chunks = std::vector<std::string>();
+
+		auto max = std::ceil((0.f + dist) / size);
+		for (size_t i = 0; i < max; ++i)
+		{
+			auto step = (i != max - 1) ? size : (dist - size * (max - 1));
+
+			chunks.emplace_back(ExportPoints(
+				pos + i * size, 
+				pos + i * size + step
+			));
+		}
+		return chunks;
+	}
+
+	std::string ExportPoints(const ATable& points) const
+	{
+		return ExportPoints(points.begin(), points.end());
+	}
+
+	std::string ExportPoints(ATable::const_iterator pos, ATable::const_iterator end) const
 	{
 		auto ss = std::stringstream();
 		ss << "{";
 		auto tmp = std::vector<std::string>();
-		for (auto& row : exported)
+		for (; pos != end; ++pos)
 		{
-			tmp.push_back("{" + boost::join(row, ",") + "}");
+			tmp.push_back("{" + boost::join(*pos, ",") + "}");
 		}
 		ss << boost::join(tmp, ",");
 		ss << "}";
