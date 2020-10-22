@@ -1,8 +1,6 @@
 (* ::Package:: *)
 
-Package["ultima`"]
-PackageScope["grid"]
-
+Package["ultima`"]; PackageScope["grid"]
 PackageExport["grid"]
 PackageExport["gridDataRoot"]
 
@@ -53,11 +51,11 @@ grid[db_String, f_, zones_List, OptionsPattern[{
 		LaunchKernels[] // Quiet;
 	];
 	
-	grid`map[clb_, points_] := If [OptionValue[bParallel]
-	,   Return[ParallelMap[clb, points, Method->"EvaluationsPerKernel"->6]];
-	,   Return[Map[clb, points]];
+	grid`map[points_] := If [OptionValue[bParallel]
+	,   ParallelMap[Append[#, f[#]]&, points, DistributedContexts->{"Global`", "ultima`"}]
+	,   Map[f, points];
 	];
-	
+
 	grid`job = If [vmode == "Stage", 
 		(
 			grid`head = #[[1;;-2]];
@@ -72,7 +70,7 @@ grid[db_String, f_, zones_List, OptionsPattern[{
 	
 	grid`vkernels  = If [OptionValue[bParallel], $KernelCount, 1];
 	grid`worker[] := Module[{subpoints = #},
-		grid`points = grid`map[grid`job, subpoints];
+		grid`points = grid`map[subpoints];
 		grid`fnd    = Join[grid`fnd, grid`points];
 		gridSavePoints[db, grid`points];
 	]& /@ Partition[grid`msg, UpTo[vbacket grid`vkernels]];
